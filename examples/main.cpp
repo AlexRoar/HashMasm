@@ -57,11 +57,10 @@ void hashMasmTest(size_t allWhitespaces, char *content) {
         fflush(stdout);
         token = flattenString(token);
         auto *valuePtr = htable.get(token);
-        if (valuePtr == nullptr) {
+        if (valuePtr == nullptr)
             htable.set(token, 1, false);
-        } else {
+        else
             htable.set(token, 1 + *valuePtr, false);
-        }
         token = strtok(NULL, " ");
         i++;
     }
