@@ -1,0 +1,6 @@
+[submodule "src/CppSwiftyList"]
+	path = src/CppSwiftyList
+	url = https://github.com/AlexRoar/CppSwiftyList
+[submodule "googletest"]
+	path = googletest
+	url = https://github.com/google/googletest
