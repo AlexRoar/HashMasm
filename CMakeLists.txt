@@ -14,5 +14,5 @@ target_link_libraries(HashMasmTests gtest gtest_main)
 include_directories(src/CppSwiftyList)
 add_library(HashMasmLib SHARED src/HashMasm.h src/HashMasm.cpp src/HashMasm.cpp src/CRC.h src/CRCLookup.h)
 
-add_executable(HashMasm examples/main.cpp)
-target_link_libraries(HashMasm HashMasmLib)
+add_executable(HashMasmTranslate examples/main.cpp)
+target_link_libraries(HashMasmTranslate HashMasmLib)

@@ -16,9 +16,11 @@ class HashMasm {
         char *key;
         T value;
         size_t hash;
+        bool dublicateKey;
 
         void dest(){
-            free(key);
+            if (dublicateKey)
+                free(key);
         }
     };
     FastList<HashCell>* storage;
@@ -106,11 +108,14 @@ public:
         freeStorage(storage);
     }
 
-    void set(const char* key, const T& value) {
+    void set(const char* key, const T& value, bool dublicateKey=true) {
         tryRehash();
         size_t hashedInitial = hashString(key);
         size_t hashed = hashedInitial % capacity;
-        char* keyDub = strdup(key);
+        char* keyDub = const_cast<char *>(key);
+        if (dublicateKey)
+            keyDub = strdup(key);
+
 
         HashCell* node = nullptr;
         for (size_t i = storage[hashed].begin(); i != 0; storage[hashed].nextIterator(&i)) {
@@ -124,7 +129,7 @@ public:
         if (node) {
             node->value = value;
         } else {
-            HashCell newCell = {keyDub, value, hashedInitial};
+            HashCell newCell = {keyDub, value, hashedInitial, dublicateKey};
             storage[hashed].pushBack(newCell);
             size++;
         }
@@ -179,11 +184,11 @@ public:
         return threshold;
     }
 
-    static const int getListInitSize() {
+    static int getListInitSize() {
         return listInitSize;
     }
 
-    static const int getMinCapacity() {
+    static int getMinCapacity() {
         return minCapacity;
     }
 };
