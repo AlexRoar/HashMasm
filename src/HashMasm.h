@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include "FastList.h"
-#include "CRC.h"
+#include "hashes.h"
 
 template<typename T>
 class HashMasm {
@@ -31,7 +31,9 @@ class HashMasm {
     size_t       threshold;
 
     size_t hashString(const char* key) {
-        return CRC::hash64(-1, reinterpret_cast<const unsigned char *>(key));
+//        return key[0] + key[1];
+//        return CRC::hash64(-1, reinterpret_cast<const unsigned char *>(key));
+        return FNV::fnv64(key);
     }
 
     constexpr static int listInitSize = 8;
