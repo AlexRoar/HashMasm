@@ -58,8 +58,9 @@ class HashMasm {
     }
 
     int tryRehash() {
-        if (size > threshold)
-            rehash();
+        if (isRehash && size > threshold)
+            return rehash();
+        return EXIT_SUCCESS;
     }
 
     void freeStorage(FastList<HashCell>* storageTest) {

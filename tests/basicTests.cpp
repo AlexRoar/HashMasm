@@ -36,7 +36,7 @@ TEST(HashMasm, setGetRandomOverflowed) {
     setGetTest(testSize, 50, 32, false);
 }
 
-TEST(HashMasm, setGetRandomNoRehash) {
+TEST(HashMasm, setGetRandomNoRehashBig) {
     const int testSize = 100000;
     setGetTest(testSize, 50, testSize * 2, false);
 }
@@ -44,4 +44,9 @@ TEST(HashMasm, setGetRandomNoRehash) {
 TEST(HashMasm, setGetRandomRehash) {
     const int testSize = 100000;
     setGetTest(testSize, 50, 0, false);
+}
+
+TEST(HashMasm, setGetRandomNoRehashSmall) {
+    const int testSize = 100000;
+    setGetTest(testSize, 50, 100, false, false);
 }

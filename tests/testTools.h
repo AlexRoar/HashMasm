@@ -24,7 +24,7 @@ char* getRandomString(unsigned size){
     return tmp_s;
 }
 
-void setGetTest (int testNum, int strSize, int startSize, bool variableStrSize=false) {
+void setGetTest (int testNum, int strSize, int startSize, bool variableStrSize=false, bool rehash = true) {
     auto testStrings = (StringMap*)(calloc(testNum + 1, sizeof (StringMap)));
     for (int i = 0; i < testNum; i++) {
         testStrings[i].key = getRandomString(variableStrSize ? i + 1 : strSize);
@@ -32,7 +32,7 @@ void setGetTest (int testNum, int strSize, int startSize, bool variableStrSize=f
     }
 
     HashMasm<int> htable = {};
-    ASSERT_EQ(htable.init(startSize), EXIT_SUCCESS);
+    ASSERT_EQ(htable.init(startSize, rehash), EXIT_SUCCESS);
 
     for (int i = 0; i < testNum; i++) {
         htable.set(testStrings[i].key, testStrings[i].val);
