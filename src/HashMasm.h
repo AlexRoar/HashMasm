@@ -4,11 +4,15 @@
 
 #ifndef HashMasm_GUARD
 #define HashMasm_GUARD
+#define ASMOPT
+#define USECRC
+
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include "FastList.h"
-#include "hashes.h"
+#include "hash/hashes.h"
 
 template<typename T>
 class HashMasm {
@@ -17,51 +21,102 @@ class HashMasm {
         T value;
         size_t hash;
         bool dublicateKey;
+        size_t len;
 
-        void dest(){
+
+        void dest() {
             if (dublicateKey)
-                free(key);
-        }
-
-        void init(char *keyDubNew, const T& valueNew, size_t hashedInitial, bool dublicateKeyNew) {
-            key = keyDubNew;
-            value = valueNew;
-            hash = hashedInitial;
-            dublicateKey = dublicateKeyNew;
-        }
-
-        static HashCell* New(char *keyDubNew, const T& valueNew, size_t hashedInitial, bool dublicateKeyNew){
-            HashCell *thou = static_cast<HashCell *>(calloc(1, sizeof(HashCell)));
-            thou->init(keyDubNew, valueNew, hashedInitial, dublicateKeyNew);
-            return thou;
-        }
-
-        static void Delete(HashCell* thou) {
-            thou->dest();
-            free(thou);
+                free((void*)key);
         }
     };
-    typedef HashCell* listCell;
-    FastList<listCell>* storage;
-    bool         isRehash;
-    size_t       capacity;
-    unsigned     loadRate;
-    size_t       size;
-    size_t       threshold;
 
-    size_t hashString(const char* key) {
-//        return key[0] + key[1];
-//        return CRC::hash64(-1, reinterpret_cast<const unsigned char *>(key));
-        return FNV::fnv64(key);
-    }
+    struct HashIter {
+        typedef ptrdiff_t difference_type;
+        typedef T value_type;
+        typedef T& reference;
+        typedef T* pointer;
+        typedef std::bidirectional_iterator_tag iterator_category;
+
+        HashMasm *object;
+        size_t bucket;
+        size_t pos;
+        bool end;
+
+        HashIter &operator++() {
+            object->storage[bucket].nextIterator(&pos);
+            while (pos == object->storage[bucket].end()) {
+                bucket++;
+                if (bucket >= object->getCapacity()) {
+                    end = true;
+                    break;
+                }
+                pos = object->storage[bucket].begin();
+            }
+            return *this;
+        }
+
+        HashIter &operator--() {
+            object->storage[bucket].prevIterator(&pos);
+            while (pos == object->storage[bucket].end()) {
+                if (bucket == 0) {
+                    end = true;
+                    break;
+                }
+                bucket--;
+                pos = object->storage[bucket].last();
+            }
+            return *this;
+        }
+
+        HashCell& operator*() {
+            HashCell *value = nullptr;
+            object->storage[bucket].get(pos, &value);
+            return *value;
+        }
+
+        HashIter operator++(int) {
+            HashIter now = *this;
+            ++(*this);
+            return now;
+        }
+
+        bool operator==(const HashIter &other) {
+            if (end == other.end && end)
+                return true;
+            return end == other.end && pos == other.pos && bucket == other.bucket && object == other.object;
+        }
+
+        bool operator!=(const HashIter &other) {
+            return !(*this == other);
+        }
+    };
 
     constexpr static int listInitSize = 8;
     constexpr static int minCapacity = 32;
+    FastList<HashCell> *storage;
+    bool isRehash;
+    size_t capacity;
+    unsigned loadRate;
+    size_t size;
+    size_t threshold;
+
+    size_t hashString(const char *key, size_t len = 0) {
+        #ifdef ASMOPT
+            #pragma message "Asm optimization of HashMasm::hashString\n"
+            #ifdef USECRC
+                return CRC::hash32Asm(reinterpret_cast<const unsigned char *>(key), len);
+            #endif
+        return FNV::fnv64Asm(key);
+        #endif
+        #ifndef ASMOPT
+            return FNV::fnv64(key);
+        #endif
+    }
 
     int rehash() {
-        FastList<listCell>* previousStorage = storage;
-        size_t newCapacity = capacity * 2;
-        storage = (FastList<listCell>*)calloc(newCapacity, sizeof(FastList<listCell>));
+        FastList<HashCell> *previousStorage = storage;
+        const size_t newCapacity = capacity * 2;
+        storage = (FastList<HashCell> *) calloc(newCapacity, sizeof(FastList<HashCell>));
         if (!storage)
             return EXIT_FAILURE;
 
@@ -69,9 +124,9 @@ class HashMasm {
 
         for (size_t i = 0; i < capacity; i++) {
             for (size_t iter = previousStorage[i].begin(); iter != 0; previousStorage[i].nextIterator(&iter)) {
-                listCell* value = nullptr;
+                HashCell *value = nullptr;
                 previousStorage[i].get(iter, &value);
-                storage[(*value)->hash % newCapacity].pushBack(*value);
+                storage[value->hash % newCapacity].pushBack(*value);
             }
         }
 
@@ -86,37 +141,67 @@ class HashMasm {
         return EXIT_SUCCESS;
     }
 
-    void freeStorage(FastList<HashCell*>* storageTest) {
-        listCell* tmp = nullptr;
+    void freeStorage(FastList<HashCell> *storageTest) {
+        HashCell *tmp = nullptr;
         for (int i = 0; i < capacity; i++) {
-            for (auto it = storageTest[i].begin(); it != 0; storageTest[i].nextIterator(&it)){
+            for (auto it = storageTest[i].begin(); it != storageTest[i].end(); storageTest[i].nextIterator(&it)) {
                 storageTest[i].get(it, &tmp);
-                HashCell::Delete(*tmp);
+                tmp->dest();
             }
         }
         free(storageTest);
     }
 
-    void initStorage(FastList<listCell>* storageTest, size_t len){
-        for (size_t i = 0; i < len; i++) {
+    void initStorage(FastList<HashCell> *storageTest, size_t len) {
+        for (size_t i = 0; i < len; i++)
             storageTest[i].init(listInitSize);
+    }
+
+
+    HashCell *findCell(const char *key, size_t hashed, size_t *iter = nullptr) {
+        HashCell *node = nullptr, *tmpNode = nullptr;
+        #ifdef ASMOPT
+        volatile size_t i = storage[hashed].begin();
+        findCellLoop:
+        asm goto ("test %0, %0\n"
+                  "je %l1"::"r"(i):"cc": findCellLoopEnd);
+        {
+            storage[hashed].get(i, &tmpNode);
+            if (strcmp(tmpNode->key, key) == 0) {
+                node = tmpNode;
+                asm goto("jmp %l0":::: findCellLoopEnd);
+            }
+            storage[hashed].nextIterator((size_t*)&i);
         }
+        asm goto("jmp %l0":::: findCellLoop);
+        findCellLoopEnd:
+        #endif
+        #ifndef ASMOPT
+        size_t i = storage[hashed].begin();
+        for (; i != storage[hashed].end();storage[hashed].nextIterator(&i)){
+            storage[hashed].get(i, &tmpNode);
+            if (strcmp(tmpNode->key, key) == 0) {
+                node = tmpNode;
+            }
+        }
+        #endif
+        if (iter)
+            *iter = i;
+        return node;
     }
 
 public:
-
-    int init(size_t newCapacity, bool rehash=true, unsigned newLoadrate = 75) {
+    int init(size_t newCapacity, bool rehash = true, unsigned newLoadrate = 75) {
         if (newCapacity < minCapacity)
             newCapacity = minCapacity;
-        capacity = newCapacity;
+        capacity = newCapacity * 2;
         loadRate = newLoadrate;
         isRehash = rehash;
         threshold = loadRate * capacity / 100;
         size = 0;
-        storage = (FastList<listCell>*)calloc(capacity, sizeof(FastList<listCell>));
-        if (!storage) {
+        storage = (FastList<HashCell> *) calloc(capacity, sizeof(FastList<HashCell>));
+        if (!storage)
             return EXIT_FAILURE;
-        }
         initStorage(storage, capacity);
         return EXIT_SUCCESS;
     }
@@ -129,53 +214,62 @@ public:
         freeStorage(storage);
     }
 
-    void set(const char* key, const T& value, bool dublicateKey=true) {
+    void set(const char *key, const T &value, bool dublicateKey = true) {
         tryRehash();
-        size_t hashedInitial = hashString(key);
+        size_t hashedInitial = hashString(key, strlen(key));
         size_t hashed = hashedInitial % capacity;
-        char* keyDub = const_cast<char *>(key);
+        char *keyDub = const_cast<char *>(key);
         if (dublicateKey)
             keyDub = strdup(key);
 
-
-        listCell* node = nullptr;
-        for (size_t i = storage[hashed].begin(); i != 0; storage[hashed].nextIterator(&i)) {
-            listCell* tmpNode = nullptr;
-            storage[hashed].get(i, &tmpNode);
-            if (strcmp((*tmpNode)->key, key) == 0){
-                node = tmpNode;
-                break;
-            }
-        }
+        HashCell *node = findCell(key, hashed);
         if (node) {
-            (*node)->value = value;
+            node->value = value;
         } else {
-            listCell newCell = HashCell::New(keyDub, value, hashedInitial, dublicateKey);
+            HashCell newCell = {keyDub, value, hashedInitial, dublicateKey, strlen(keyDub)};
             storage[hashed].pushBack(newCell);
             size++;
         }
     }
 
-    T* get(const char* key) {
-        size_t hashed = hashString(key) % capacity;
+    T *get(const char *key) {
+        size_t hashed = hashString(key, strlen(key)) % capacity;
+        HashCell *node = findCell(key, hashed);
+        return node ? &(node->value) : nullptr;
+    }
 
-        listCell *node = nullptr;
-        for (size_t i = storage[hashed].begin(); i != 0; storage[hashed].nextIterator(&i)) {
-            listCell *tmpNode = nullptr;
-            storage[hashed].get(i, &tmpNode);
-            if (strcmp((*tmpNode)->key, key) == 0) {
-                node = tmpNode;
-                break;
-            }
+    void remove(const char *key) {
+        size_t hashed = hashString(key, strlen(key)) % capacity;
+        size_t id = 0;
+        findCell(key, hashed, &id);
+        if (id) {
+            HashCell *found = nullptr;
+            storage[hashed].get(id, &found);
+            found->dest();
+            storage[hashed].remove(id);
+            size--;
         }
-        if (node)
-            return &((*node)->value);
-        else
-            return nullptr;
+    }
+
+    T &operator[](const char *key) {
+        size_t hashedInitial = hashString(key, strlen(key));
+        size_t hashed = hashedInitial % capacity, id = 0;
+        findCell(key, hashed, &id);
+        if (!id) {
+            size++;
+            HashCell newCell = {};
+            newCell.dublicateKey = true;
+            newCell.hash = hashedInitial;
+            newCell.key = strdup(key);
+            storage[hashed].pushBack(newCell, &id);
+        }
+        HashCell *value = nullptr;
+        storage[hashed].get(id, &value);
+        return value->value;
     }
 
     static HashMasm *New() {
-        HashMasm *thou = static_cast<HashMasm *>(calloc(1, sizeof(HashMasm)));
+        auto thou = static_cast<HashMasm *>(calloc(1, sizeof(HashMasm)));
         thou->init();
         return thou;
     }
@@ -185,23 +279,23 @@ public:
         free(this);
     }
 
-    bool getIsRehash() const {
+    [[nodiscard]] bool getIsRehash() const {
         return isRehash;
     }
 
-    size_t getCapacity() const {
+    [[nodiscard]] size_t getCapacity() const {
         return capacity;
     }
 
-    unsigned int getLoadRate() const {
+    [[nodiscard]] unsigned int getLoadRate() const {
         return loadRate;
     }
 
-    size_t getSize() const {
+    [[nodiscard]] size_t getSize() const {
         return size;
     }
 
-    size_t getThreshold() const {
+    [[nodiscard]] size_t getThreshold() const {
         return threshold;
     }
 
@@ -211,6 +305,24 @@ public:
 
     static int getMinCapacity() {
         return minCapacity;
+    }
+
+    HashIter begin() {
+        HashIter it = {this, 0, 0, false};
+        ++it;
+        return it;
+    }
+
+    HashIter end() {
+        HashIter it = {this, 0, 0, true};
+        return it;
+    }
+
+    void printBucketsSizes() {
+        for(size_t i = 0; i < getCapacity(); i++){
+            printf("%zu, ", storage[i].getSize());
+        }
+        printf("\n");
     }
 };
 

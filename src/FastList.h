@@ -5,7 +5,7 @@
 #ifndef FastList_GUARD
 #define FastList_GUARD
 
-template <typename T>
+template<typename T>
 class FastList {
     enum ListOpResult {
         LIST_OP_OK,
@@ -18,13 +18,13 @@ class FastList {
     };
 
     struct ListNode {
-        T value;
         size_t next;
         size_t previous;
-        bool     valid;
+        T value;
+        bool valid;
     };
 
-    ListNode* storage;
+    ListNode *storage;
     bool optimized;
     constexpr static int INITIAL_INCREASE = 32;
 
@@ -35,7 +35,7 @@ class FastList {
     size_t freeSize;
 public:
 
-    void init(){
+    void init() {
         init(INITIAL_INCREASE);
     }
 
@@ -52,10 +52,11 @@ public:
     }
 
     void dest() {
+        free(this->storage);
     }
 
     static FastList *New() {
-        FastList *thou = static_cast<FastList *>(calloc(1, sizeof(FastList)));
+        auto thou = static_cast<FastList *>(calloc(1, sizeof(FastList)));
         thou->init();
         return thou;
     }
@@ -79,11 +80,10 @@ public:
             this->storage[newPos].valid = true;
             return newPos;
         }
-        if (this->reallocate() != LIST_OP_OK) {
+        if (this->reallocate() != LIST_OP_OK)
             return 0;
-        }
         this->storage[this->size + 1].valid = true;
-        return  this->size + 1;
+        return this->size + 1;
     }
 
     /**
@@ -93,7 +93,8 @@ public:
     ListOpResult reallocate() {
         if (this->freeSize != 0)
             return LIST_OP_OK;
-        if (this->size < this->capacity) return LIST_OP_OK;
+        if (this->size < this->capacity)
+            return LIST_OP_OK;
         size_t newCapacity = this->capacity;
         if (this->size >= this->capacity)
             newCapacity = (this->capacity == 0) ? INITIAL_INCREASE : this->capacity * 2;
@@ -101,7 +102,7 @@ public:
         if (this->capacity == newCapacity + 2)
             return LIST_OP_OK;
 
-        auto *newStorage = (ListNode *)realloc(this->storage,(newCapacity + 2) * sizeof(ListNode));
+        auto *newStorage = (ListNode *) realloc(this->storage, (newCapacity + 2) * sizeof(ListNode));
 
         if (newStorage == NULL)
             return LIST_OP_NOMEM;
@@ -135,9 +136,8 @@ public:
             return pos + 1;
         } else {
             size_t iterator = 0;
-            for (size_t i = 0; i <= pos; i++) {
+            for (size_t i = 0; i <= pos; i++)
                 iterator = this->storage[iterator].next;
-            }
             return iterator;
         }
     }
@@ -149,7 +149,7 @@ public:
      * @param physPos - physical position of inserted element
      * @return operation result
      */
-    ListOpResult insertAfter(size_t pos, T value, size_t* physPos=nullptr) {
+    ListOpResult insertAfter(size_t pos, T value, size_t *physPos = nullptr) {
         if (pos > this->sumSize()) {
             return LIST_OP_OVERFLOW;
         }
@@ -185,7 +185,7 @@ public:
      * @param physPos - physical position of inserted element
      * @return operation result
      */
-    ListOpResult insertAfterLogic(size_t pos, T value, size_t* physPos=nullptr) {
+    ListOpResult insertAfterLogic(size_t pos, T value, size_t *physPos = nullptr) {
         if (pos > this->size)
             return LIST_OP_OVERFLOW;
         return this->insertAfter(this->logicToPhysic(pos), value, physPos);
@@ -198,14 +198,9 @@ public:
      * @param physPos - physical position of inserted element
      * @return operation result
      */
-    ListOpResult insertBefore(size_t pos, T value, size_t* physPos=nullptr) {
-        if (pos > this->sumSize()) {
-            return LIST_OP_OVERFLOW;
-        }
-        if (!this->addressValid(pos) && pos != 0) {
+    ListOpResult insertBefore(size_t pos, T value, size_t *physPos = nullptr) {
+        if (pos > this->sumSize() || (!this->addressValid(pos) && pos != 0))
             return LIST_OP_SEGFAULT;
-        }
-
         pos = this->storage[pos].previous;
         return this->insertAfter(pos, value, physPos);
     }
@@ -217,7 +212,7 @@ public:
      * @param physPos - physical position of inserted element
      * @return operation result
      */
-    ListOpResult insertBeforeLogic(size_t pos, T value, size_t* physPos=nullptr) {
+    ListOpResult insertBeforeLogic(size_t pos, T value, size_t *physPos = nullptr) {
         if (pos > this->size)
             return LIST_OP_OVERFLOW;
         return this->insertBefore(this->logicToPhysic(pos), value, physPos);
@@ -229,7 +224,7 @@ public:
      * @param physPos - physical position of inserted element
      * @return operation result
      */
-    ListOpResult pushFront(const T& value, size_t* physPos=nullptr) {
+    ListOpResult pushFront(const T &value, size_t *physPos = nullptr) {
         return this->insertAfter(0, value, physPos);
     }
 
@@ -239,7 +234,7 @@ public:
      * @param physPos - physical position of inserted element
      * @return operation result
      */
-    ListOpResult pushBack(const T& value, size_t* physPos=nullptr) {
+    ListOpResult pushBack(const T &value, size_t *physPos = nullptr) {
         return this->insertAfter(this->storage[0].previous, value, physPos);
     }
 
@@ -249,7 +244,7 @@ public:
      * @param value - new value
      * @return operation result
      */
-    ListOpResult set(size_t pos, const T& value) {
+    ListOpResult set(size_t pos, const T &value) {
         if (!this->addressValid(pos))
             return LIST_OP_SEGFAULT;
         this->storage[pos].value = value;
@@ -262,7 +257,7 @@ public:
      * @param value - new value
      * @return operation result
      */
-    ListOpResult setLogic(size_t pos, const T& value) {
+    ListOpResult setLogic(size_t pos, const T &value) {
         if (pos > this->size)
             return LIST_OP_OVERFLOW;
         return this->set(this->logicToPhysic(pos), value);
@@ -274,13 +269,15 @@ public:
      * @param value - retrieved value
      * @return operation result
      */
-    ListOpResult get(size_t pos, T** value) {
-        if (!this->storage[pos].valid)
-            return LIST_OP_SEGFAULT;
-        if (value == nullptr)
+    ListOpResult get(size_t pos, T **value) {
+        if (value == nullptr || !this->storage[pos].valid)
             return LIST_OP_SEGFAULT;
         *value = &(this->storage[pos].value);
         return LIST_OP_OK;
+    }
+
+    const ListNode *getStorage() const {
+        return storage;
     }
 
     /**
@@ -289,7 +286,7 @@ public:
      * @param value - retrieved value
      * @return operation result
      */
-    ListOpResult getLogic(size_t pos, T* value=nullptr) {
+    ListOpResult getLogic(size_t pos, T *value = nullptr) {
         if (pos > this->size)
             return LIST_OP_OVERFLOW;
         return this->get(this->logicToPhysic(pos), value);
@@ -301,13 +298,11 @@ public:
      * @param value - retrieved value
      * @return operation result
      */
-    ListOpResult pop(size_t pos, T *value=nullptr) {
+    ListOpResult pop(size_t pos, T *value = nullptr) {
         if (this->size == 0)
             return LIST_OP_UNDERFLOW;
-        if (!this->addressValid(pos)) {
-            this->opDumper(LIST_OP_SEGFAULT, "pop invalid address");
+        if (!this->addressValid(pos))
             return LIST_OP_SEGFAULT;
-        }
 
         if (pos != this->storage[0].previous)
             this->optimized = false;
@@ -380,7 +375,7 @@ public:
         this->storage[0].next = 0;
         this->storage[0].previous = 0;
         this->freeSize = 0;
-        this->freePtr  = 0;
+        this->freePtr = 0;
         this->reallocate();
         return LIST_OP_OK;
     }
@@ -391,7 +386,7 @@ public:
      * @return operation result
      */
     ListOpResult optimize() {
-        auto *newStorage = (ListNode*)(calloc(this->size + 2, sizeof(ListNode)));
+        auto *newStorage = (ListNode *) (calloc(this->size + 2, sizeof(ListNode)));
         if (newStorage == nullptr)
             return LIST_OP_NOMEM;
         newStorage[0] = this->storage[0];
@@ -420,10 +415,10 @@ public:
      * @param pos
      * @return
      */
-    ListOpResult nextIterator(size_t* pos) {
+    ListOpResult nextIterator(size_t *pos) {
         if (!this->addressValid(*pos))
             return LIST_OP_SEGFAULT;
-        *pos =  this->storage[*pos].next;
+        *pos = this->storage[*pos].next;
         return LIST_OP_OK;
     }
 
@@ -433,7 +428,7 @@ public:
      * @return
      */
     size_t nextIterator(size_t pos) {
-        if (!this->addressValid(pos))
+        if (!this->addressValid(pos) && pos != 0)
             return 0;
         return this->storage[pos].next;
     }
@@ -444,7 +439,7 @@ public:
      * @return
      */
     size_t prevIterator(size_t pos) {
-        if (!this->addressValid(pos))
+        if (!this->addressValid(pos) && pos != 0)
             return 0;
         return this->storage[pos].previous;
     }
@@ -454,10 +449,10 @@ public:
      * @param pos
      * @return
      */
-    ListOpResult prevIterator(size_t* pos) {
-        if (!this->addressValid(*pos))
+    ListOpResult prevIterator(size_t *pos) {
+        if (!this->addressValid(*pos) && *pos != 0)
             return LIST_OP_SEGFAULT;
-        *pos =  this->storage[*pos].previous;
+        *pos = this->storage[*pos].previous;
         return LIST_OP_OK;
     }
 
@@ -470,7 +465,7 @@ public:
         if (elemNumbers < this->sumSize())
             elemNumbers = this->sumSize();
         elemNumbers++;
-        auto newStorage = (ListNode*)calloc(elemNumbers, sizeof(ListNode));
+        auto newStorage = (ListNode *) calloc(elemNumbers, sizeof(ListNode));
         if (newStorage == nullptr)
             return LIST_OP_NOMEM;
         this->storage = newStorage;
@@ -486,81 +481,51 @@ public:
         return this->resize(0);
     }
 
-    /**
-     * Search an element in the list. Retrieves the logical position
-     * @param pos - logical pos of considered element
-     * @param value - searched value
-     * @return operation result
-     */
-    ListOpResult searchLogic(size_t *pos, const T& value) const {
-        if (this->size == 0)
-            return LIST_OP_NOTFOUND;
-
-        *pos = this->storage[0].next;
-        while (true) {
-            if (this->storage[*pos].value == value) {
-                (*pos)--;
-                return LIST_OP_OK;
-            }
-
-            if (*pos == this->storage[0].previous)
-                break;
-            *pos = this->storage[*pos].next;
-        }
-        return LIST_OP_NOTFOUND;
-    }
-
-    /**
-     * Search an element in the list. Retrieves the physic position
-     * @param pos - physic pos of considered element
-     * @param value - searched value
-     * @return operation result
-     */
-    ListOpResult search(size_t *pos, const T& value) const{
-        if (this->size == 0)
-            return LIST_OP_NOTFOUND;
-        *pos = this->storage[0].next;
-        while (*pos != 0) {
-            if (this->storage[*pos].value == value) {
-                return LIST_OP_OK;
-            }
-
-            if (*pos == this->storage[0].previous)
-                break;
-            *pos = this->storage[*pos].next;
-        }
-        return LIST_OP_NOTFOUND;
-    }
-
-    size_t begin() const {
+    [[nodiscard]] size_t begin() const {
+        #ifdef ASMOPT
+            #pragma message "Asm optimization of FastList::begin\n"
+        volatile size_t retVal = 0;
+        asm volatile(
+            "mov (%1), %0\n"
+            "mov (%0), %0\n"
+            : "=r"(retVal)
+            :"r"(&(this->storage)));
+        return retVal;
+        #endif
+        #ifndef ASMOPT
         return this->storage[0].next;
+        #endif
     }
 
-    size_t end() const {
+    [[nodiscard]] size_t last() const {
         return this->storage[0].previous;
     }
 
-    size_t getSize() const {
+    [[nodiscard]] size_t end() const {
+        return 0;
+    }
+
+    [[nodiscard]] size_t getSize() const {
         return this->size;
     }
 
-    size_t getCapacity() const {
+    [[nodiscard]] size_t getCapacity() const {
         return this->capacity;
     }
 
-    bool isOptimized() const{
+    [[nodiscard]] bool isOptimized() const {
         return this->optimized;
     }
 
-    bool isEmpty() const{
+    [[nodiscard]]bool isEmpty() const {
         return this->size == 0;
     }
 
-    size_t sumSize() const{
+    [[nodiscard]] size_t sumSize() const {
         return this->size + this->freeSize;
     }
 
-    bool addressValid(size_t pos) const {
+    [[nodiscard]] bool addressValid(size_t pos) const {
         return this->storage[pos].valid;
     }
 };
