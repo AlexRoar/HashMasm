@@ -23,11 +23,12 @@
 IntSize 	equ 32
 ByteSize 	equ 8
 FNV64Const  equ 1099511628211
-global      _fnv64
+global      _fnv64Asm
 global      _hash32Asm
+global      _hash32AsmFLen
 
 section  .text
-_fnv64: ; size_t fnv64(const char *p, size_t hash = 0)
+_fnv64Asm: ; size_t fnv64(const char *p, size_t hash = 0)
     mov rax, rsi
     mov rcx, FNV64Const
 .loop:
@@ -63,4 +64,12 @@ _hash32Asm: ; size_t hash32Asm(const unsigned char *p, size_t len, size_t hash =
         test  rsi, rsi
         jne .loop
     .loopEnd:
+    ret
+
+_hash32AsmFLen:  ; size_t hash32AsmFLen(const unsigned char *p, size_t hash = 0)
+    mov rax, rdx
+    crc32 rax, qword [rdi]
+    crc32 rax, qword [rdi + 8]
+    crc32 rax, qword [rdi + 8 * 2]
+    crc32 rax, qword [rdi + 8 * 3]
     ret

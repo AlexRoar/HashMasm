@@ -18,6 +18,16 @@ timersub(&tval_after, &tval_before, &tval_result); \
 }printf("%s elapsed: %ld.%06ld \n", msg, (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);\
 } while(0)
 
+#define TIMENOPRINTF(code) \
+do { \
+struct timeval tval_before = {}, tval_after = {}, tval_result = {}; \
+bool ended = false; \
+gettimeofday(&tval_before, NULL);\
+{code} \
+} while(0)
+
+#define GETTIME(res) do{gettimeofday(&tval_after, NULL); timersub(&tval_after, &tval_before, res);}while(0)
+
 #define SET_TIME do { \
 gettimeofday(&tval_after, NULL);\
 timersub(&tval_after, &tval_before, &tval_result);\

@@ -9,6 +9,7 @@
 namespace CRC {
     size_t hash64(size_t crc, const unsigned char *p);
     size_t hash32(size_t crc, const unsigned char *p);
+    extern "C" size_t hash32AsmFLen(const unsigned char *p, size_t len, size_t hash = 0);
     extern "C" size_t hash32Asm(const unsigned char *p, size_t len, size_t hash = 0);
 }
 

@@ -4,20 +4,23 @@
 
 #include "leoTestsHelpers.h"
 #include "HashMasm.h"
+#include "HashMasmFixed.h"
 #include <unordered_map>
 #include <cstdio>
 #include <cstdlib>
+#include <ctype.h>
 
-#define SIZE_MODIF /10;
+#define SIZE_MODIF * 300;
 
 void hashMasmTest(size_t allWhitespaces, char *content) {
     HashMasm<unsigned> htable = {};
-    htable.init(971, false);
+    htable.init();
 
     char *token = strtok(content, " ");
     size_t i = 0;
     while (token && i < allWhitespaces) {
         token = flattenString(token);
+        volatile __m256i tPacked = makePacked(token);
         auto *valuePtr = htable.get(token);
         if (valuePtr == nullptr)
             htable.set(token, 1, false);
@@ -26,13 +29,14 @@ void hashMasmTest(size_t allWhitespaces, char *content) {
         token = strtok(NULL, " ");
         i++;
     }
-    printf("\r100%% (%zu words)\n", i);
+    printf("\r100%%\n");
     const int testSize = htable.getSize() SIZE_MODIF;
-    const int stringLen = 100;
+    const int stringLen = 40;
     char* random = getRandomString(stringLen);
     for(int iter = 0; iter < testSize; iter++) {
         random = getRandomString(stringLen, random);
-        auto get = htable.get(random);
+        __m256i tPacked = makePacked(random);
+        volatile auto get = htable.get(random);
     }
     free(random);
 
@@ -41,13 +45,42 @@ void hashMasmTest(size_t allWhitespaces, char *content) {
     htable.dest();
 }
 
+void hashMasmTestFixed(size_t allWhitespaces, char *content) {
+    HashMasmFixed<unsigned> htable = {};
+    htable.init();
+
+    char *token = strtok(content, " ");
+    size_t i = 0;
+    while (token && i < allWhitespaces) {
+        token = flattenString(token);
+        __m256i tPacked = makePacked(token);
+        auto *valuePtr = htable.get(tPacked);
+        if (valuePtr == nullptr)
+            htable.set(tPacked, 1);
+        else
+            htable.set(tPacked, 1 + *valuePtr);
+        token = strtok(NULL, " ");
+        i++;
+    }
+    printf("\r100%%\n");
+    const int testSize = htable.getSize() SIZE_MODIF;
+    const int stringLen = 32;
+    char* random = getRandomString(stringLen);
+    for(int iter = 0; iter < testSize; iter++) {
+        random = getRandomString(stringLen, random);
+        __m256i tPacked = makePacked(random);
+        volatile auto get = htable.get(tPacked);
+    }
+    free(random);
+    printf("\r100%%\n");
+    htable.dest();
+}
+
 void hashStdTest(size_t allWhitespaces, char *content) {
     std::unordered_map<const char *, unsigned> htable;
     char *token = strtok(content, " ");
     size_t i = 0;
     while (token && i < allWhitespaces) {
-        printf("\b\r%d%%", int(float(i * 100) / float(allWhitespaces)));
-        fflush(stdout);
         token = flattenString(token);
         auto valuePtr = htable.find(token);
         if (valuePtr == htable.end()) {
@@ -58,6 +91,16 @@ void hashStdTest(size_t allWhitespaces, char *content) {
         token = strtok(NULL, " ");
         i++;
     }
+    printf("\r100%%\n");
+    const int testSize = htable.size() SIZE_MODIF;
+    const int stringLen = 40;
+    char* random = getRandomString(stringLen);
+    for(int iter = 0; iter < testSize; iter++) {
+        random = getRandomString(stringLen, random);
+        volatile auto get = htable.find(random);
+    }
+    free(random);
+
     printf("\r100%%\n");
 }
 
@@ -100,10 +143,8 @@ char *flattenString(char *token) {
         *token = 0;
         token--;
     }
-    while (token != nullptr && token > ret && *token == ' ') {
+    for (;token != nullptr && token > ret && *token == ' ';token--)
         *token = 0;
-        token--;
-    }
     return ret;
 }
 
@@ -129,14 +170,7 @@ size_t countFileLines(const char *content) {
 
 char* getRandomString(unsigned size){
     auto tmp_s = (char *) calloc((size + 2), sizeof(char));
-    static const char alphanum[] =
-            "0123456789"
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            "abcdefghijklmnopqrstuvwxyz";
-
-    int i = 0;
-    for (; i < size; ++i)
-        tmp_s[i] = alphanum[rand() % (sizeof(alphanum) - 1)];
+    getRandomString(size, tmp_s);
     return tmp_s;
 }
 
@@ -150,4 +184,18 @@ char* getRandomString(unsigned size, char* tmp_s){
     for (; i < size; ++i)
         tmp_s[i] = alphanum[rand() % (sizeof(alphanum) - 1)];
     return tmp_s;
+}
+
+__m256i makePacked(const char* value) {
+    bool ended = false;
+    #define GET_SYMB (ended = (ended ? ended : *value == '\0'), ended ? '\0': *(value++))
+    char  symbols[] __attribute__((aligned (32))) = {GET_SYMB, GET_SYMB, GET_SYMB, GET_SYMB,
+                                                     GET_SYMB, GET_SYMB, GET_SYMB, GET_SYMB,
+                                                     GET_SYMB, GET_SYMB, GET_SYMB, GET_SYMB,
+                                                     GET_SYMB, GET_SYMB, GET_SYMB, GET_SYMB,
+                                                     GET_SYMB, GET_SYMB, GET_SYMB, GET_SYMB,
+                                                     GET_SYMB, GET_SYMB, GET_SYMB, GET_SYMB,
+                                                     GET_SYMB, GET_SYMB, GET_SYMB, GET_SYMB,
+                                                     GET_SYMB, GET_SYMB, GET_SYMB, GET_SYMB};
+    return _mm256_load_si256(reinterpret_cast<const __m256i *>(symbols));
 }

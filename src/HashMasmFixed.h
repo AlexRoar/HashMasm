@@ -2,37 +2,38 @@
 // Created by Александр Дремов on 31.03.2021.
 //
 
-#ifndef HashMasm_GUARD
-#define HashMasm_GUARD
-#define ASMOPT
-#define USECRC
-
+#ifndef HashMasmFixed_GUARD
+#define HashMasmFixed_GUARD
+#define ASMOPTFX
 
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <x86intrin.h>
 #include "FastList.h"
 #include "hash/hashes.h"
 
 template<typename T>
-class HashMasm {
-    struct HashCell {
-        char *key;
-        T value;
-        size_t hash;
-        bool duplicateKey;
-        size_t len;
+class HashMasmFixed {
+    struct KeyOperations{
+        __m256i key;
 
-
-        void dest() {
-            if (duplicateKey)
-                free((void *) key);
+        bool operator==(const __m256i& other) {
+            __m256i cmp = _mm256_cmp_ps(key, other, _CMP_NEQ_UQ);
+            return _mm256_testz_si256(cmp, cmp) == 1;
         }
     };
+    struct HashCell {
+        KeyOperations key;
+        T value;
+        size_t hash;
+    };
 
+
+    constexpr static int packedNum    = 32;
     constexpr static int listInitSize = 8;
-    constexpr static int minCapacity = 32;
+    constexpr static int minCapacity  = 32;
     FastList<HashCell> *storage;
     bool isRehash;
     size_t capacity;
@@ -40,17 +41,14 @@ class HashMasm {
     size_t size;
     size_t threshold;
 
-    size_t hashString(const char *key, size_t len = 0) {
-        #ifdef ASMOPT
-            #pragma message "Asm optimization of HashMasm::hashString\n"
-            #ifdef USECRC
-        return CRC::hash32Asm(reinterpret_cast<const unsigned char *>(key), len);
-            #endif
-        return FNV::fnv64Asm(key);
-        #endif
-        #ifndef ASMOPT
-        return FNV::fnv64(key);
-        #endif
+    size_t hashString(const char *key) {
+        return CRC::hash32AsmFLen(reinterpret_cast<const unsigned char *>(key), packedNum);
+    }
+
+    size_t hashVector(const __m256i& keyPacked){
+        char  symbols[packedNum] __attribute__((aligned (32))) = {};
+        _mm256_store_si256((__m256i*)symbols, keyPacked);
+        return hashString(symbols);
     }
 
     int rehash() {
@@ -82,8 +80,9 @@ class HashMasm {
     }
 
     void freeStorage(FastList<HashCell> *storageTest) {
-        for (int i = 0; i < capacity; i++)
+        for (int i = 0; i < capacity; i++) {
             storageTest[i].dest();
+        }
         free(storageTest);
     }
 
@@ -93,34 +92,30 @@ class HashMasm {
     }
 
 
-    HashCell *findCell(const char *key, size_t hashed, size_t *iter = nullptr) {
+    HashCell *findCell(const __m256i& key, size_t hashed, size_t *iter = nullptr) {
         HashCell *node = nullptr, *tmpNode = nullptr;
-        #ifdef ASMOPT
-            #pragma message "Asm optimization of findCell loop\n"
+        #ifdef ASMOPTFX
+        #pragma message "Asm optimization of findCell loop\n"
         volatile size_t i = storage[hashed].begin();
         findCellLoop:
-        asm goto (
-        "test %0, %0\n"
-        "je %l1" :/* no output*/:
-        "r"(i):
-        "cc":
-        findCellLoopEnd);
+        asm goto ("test %0, %0\n"
+                  "je %l1"::"r"(i):"cc": findCellLoopEnd);
         {
             storage[hashed].get(i, &tmpNode);
-            if (strcmp(tmpNode->key, key) == 0) {
+            if (tmpNode->key == key) {
                 node = tmpNode;
-                asm goto("jmp %l0":/* no output*/:/* no input */:/* no flags */:findCellLoopEnd);
+                asm goto("jmp %l0":::: findCellLoopEnd);
             }
-            storage[hashed].nextIterator((size_t *) &i);
+            storage[hashed].nextIterator((size_t*)&i);
         }
-        asm goto("jmp %l0":/* no output*/:/* no input */:/* no flags */:findCellLoop);
+        asm goto("jmp %l0":::: findCellLoop);
         findCellLoopEnd:
         #endif
-        #ifndef ASMOPT
+        #ifndef ASMOPTFX
         size_t i = storage[hashed].begin();
         for (; i != storage[hashed].end();storage[hashed].nextIterator(&i)){
             storage[hashed].get(i, &tmpNode);
-            if (strcmp(tmpNode->key, key) == 0) {
+            if (tmpNode->key == key) {
                 node = tmpNode;
             }
         }
@@ -154,53 +149,47 @@ public:
         freeStorage(storage);
     }
 
-    void set(const char *key, const T &value, bool dublicateKey = true) {
+    void set(const __m256i& keyPacked, const T &value) {
         tryRehash();
-        size_t hashedInitial = hashString(key, strlen(key));
+        size_t hashedInitial = hashVector(keyPacked);
         size_t hashed = hashedInitial % capacity;
-        char *keyDub = const_cast<char *>(key);
-        if (dublicateKey)
-            keyDub = strdup(key);
 
-        HashCell *node = findCell(key, hashed);
+        HashCell *node = findCell(keyPacked, hashed);
         if (node) {
             node->value = value;
         } else {
-            HashCell newCell = {keyDub, value, hashedInitial, dublicateKey, strlen(keyDub)};
+            HashCell newCell = {{keyPacked}, value, hashedInitial};
             storage[hashed].pushBack(newCell);
             size++;
         }
     }
 
-    T *get(const char *key) {
-        size_t hashed = hashString(key, strlen(key)) % capacity;
-        HashCell *node = findCell(key, hashed);
+    T *get(const __m256i& keyPacked) {
+        size_t hashed = hashVector(keyPacked) % capacity;
+        HashCell *node = findCell(keyPacked, hashed);
         return node ? &(node->value) : nullptr;
     }
 
-    void remove(const char *key) {
-        size_t hashed = hashString(key, strlen(key)) % capacity;
+    void remove(const __m256i& keyPacked) {
+        size_t hashed = hashVector(keyPacked) % capacity;
         size_t id = 0;
-        findCell(key, hashed, &id);
+        findCell(keyPacked, hashed, &id);
         if (id) {
-            HashCell *found = nullptr;
-            storage[hashed].get(id, &found);
-            found->dest();
             storage[hashed].remove(id);
             size--;
         }
     }
 
-    T &operator[](const char *key) {
-        size_t hashedInitial = hashString(key, strlen(key));
+    T &operator[](const __m256i& keyPacked) {
+        size_t hashedInitial = hashVector(keyPacked);
         size_t hashed = hashedInitial % capacity, id = 0;
-        findCell(key, hashed, &id);
+        findCell(keyPacked, hashed, &id);
         if (!id) {
             size++;
+            tryRehash();
             HashCell newCell = {};
-            newCell.duplicateKey = true;
             newCell.hash = hashedInitial;
-            newCell.key = strdup(key);
+            newCell.key.key = keyPacked;
             storage[hashed].pushBack(newCell, &id);
         }
         HashCell *value = nullptr;
@@ -208,8 +197,8 @@ public:
         return value->value;
     }
 
-    static HashMasm *New() {
-        auto thou = static_cast<HashMasm *>(calloc(1, sizeof(HashMasm)));
+    static HashMasmFixed *New() {
+        auto thou = static_cast<HashMasmFixed *>(calloc(1, sizeof(HashMasmFixed)));
         thou->init();
         return thou;
     }
@@ -247,22 +236,22 @@ public:
         return minCapacity;
     }
 
-    void printBucketsSizes(FILE* file=stdout) {
-        for (size_t i = 0; i < getCapacity(); i++) {
-            fprintf(file, "%zu, ", storage[i].getSize());
+    void printBucketsSizes() {
+        for(size_t i = 0; i < getCapacity(); i++){
+            printf("%zu, ", storage[i].getSize());
         }
-        fprintf(file, "\n");
+        printf("\n");
     }
 
 private:
     struct HashIter {
         typedef ptrdiff_t difference_type;
         typedef T value_type;
-        typedef value_type &reference;
-        typedef value_type *pointer;
+        typedef T& reference;
+        typedef T* pointer;
         typedef std::bidirectional_iterator_tag iterator_category;
 
-        HashMasm *object;
+        HashMasmFixed *object;
         size_t bucket;
         size_t pos;
         bool end;
@@ -293,14 +282,14 @@ private:
             return *this;
         }
 
-        HashCell &operator*() {
+        HashCell& operator*() {
             HashCell *value = nullptr;
             object->storage[bucket].get(pos, &value);
             return *value;
         }
 
         HashIter operator++(int) {
-            HashIter now = *this;
+            const HashIter now = *this;
             ++(*this);
             return now;
         }
@@ -315,26 +304,14 @@ private:
             return !(*this == other);
         }
     };
-
 public:
     HashIter begin() {
         HashIter it = {this, 0, 0, false};
-        ++it;
-        return it;
+        return ++it;
     }
 
     HashIter end() {
-        HashIter it = {this, 0, 0, true};
-        return it;
-    }
-
-    HashIter find(const char *key) {
-        size_t hashed = hashString(key, strlen(key)) % capacity;
-        size_t iter = 0;
-        HashCell *node = findCell(key, hashed, &iter);
-        if (!node)
-            return {this, 0, 0, true};
-        return {this, hashed, iter, false};
+        return {this, 0, 0, true};
     }
 };
 

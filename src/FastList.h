@@ -416,7 +416,7 @@ public:
      * @return
      */
     ListOpResult nextIterator(size_t *pos) {
-        if (!this->addressValid(*pos))
+        if (!this->addressValid(*pos) && *pos != 0)
             return LIST_OP_SEGFAULT;
         *pos = this->storage[*pos].next;
         return LIST_OP_OK;

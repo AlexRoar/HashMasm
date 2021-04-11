@@ -1,6 +1,5 @@
 #include <cstdlib>
 #include <cstdio>
-#include "../src/HashMasm.h"
 #include "helpers/timingTools.h"
 #include "helpers/leoTestsHelpers.h"
 
@@ -23,6 +22,10 @@ int main(int argc, const char **argv) {
     TIME({
              hashMasmTest(allWhitespaces, content);
          }, "My hash table:");
+    strcpy(content, savedContent);
+    TIME({
+             hashMasmTestFixed(allWhitespaces, content);
+         }, "My hash table (fixed key):");
     strcpy(content, savedContent);
     TIME({
              hashStdTest(allWhitespaces, content);

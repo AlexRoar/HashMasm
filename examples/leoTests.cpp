@@ -4,8 +4,6 @@
 #include "helpers/timingTools.h"
 #include "helpers/leoTestsHelpers.h"
 
-#define SIZE_MODIF (/10);
-
 const size_t maxWords = -1;
 
 int main(int argc, const char **argv) {

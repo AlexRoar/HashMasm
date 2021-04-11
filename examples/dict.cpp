@@ -1,11 +1,14 @@
 #include <cstdlib>
 #include <cstdio>
-#include "HashMasm.h"
+#include "HashMasmFixed.h"
 #include "helpers/timingTools.h"
 #include "helpers/leoTestsHelpers.h"
 
 const size_t bufferSize = 150;
 
+void processInput(size_t allLines, HashMasmFixed<char *> &htable, char *token, size_t i);
+
+void processUserInput(HashMasmFixed<char *> &htable, char *buffer);
 
 int main(int argc, const char **argv) {
     if (argc != 2) {
@@ -18,31 +21,25 @@ int main(int argc, const char **argv) {
 
     size_t allLines = countFileLines(content);
 
-    HashMasm<char *> htable = {};
-    htable.init();
+    HashMasmFixed<char *> htable = {};
+    htable.init(allLines * 2);
 
     char *token = content;
     size_t i = 0;
     TIME({
-             while (token > (char *) 2) {
-                 printf("\b\r%d%%", int(float(i * 100) / float(allLines)));
-                 fflush(stdout);
-                 char *endLine = strchr(token, '\n');
-                 if (endLine)
-                     *endLine = 0;
-                 token = flattenString(token);
-                 char *sep = strchr(token, '=');
-                 if (!sep)
-                     break;
-                 *sep = 0;
-                 htable.set(token, sep + 1, false);
-                 token = endLine + 1;
-                 i++;
-             }
+             processInput(allLines, htable, token, i);
              printf("\r100%% (%zu words)\nTranslator is ready\n", htable.getSize());
          }, "Build time");
 
     auto *buffer = (char *) (calloc(bufferSize, 1));
+    processUserInput(htable, buffer);
+
+    htable.dest();
+    free(content);
+    return 0;
+}
+
+void processUserInput(HashMasmFixed<char *> &htable, char *buffer) {
     while (true) {
         scanf("%99s", buffer);
         if (strcmp("end", buffer) == 0)
@@ -52,16 +49,31 @@ int main(int argc, const char **argv) {
                 printf("%s -> %s\n", elem.key, elem.value);
             continue;
         }
-        char **found = htable.get(buffer);
+        char *tokenFlat = flattenString(buffer);
+        __m256i tokenKey = makePacked(tokenFlat);
+        char **found = htable.get(tokenKey);
         if (found) {
-            printf("`%s` -> `%s`\n", buffer, *found);
+            printf("`%s` -> `%s`\n", tokenFlat, *found);
         } else {
-            printf("There is no `%s` in dictionary\n", buffer);
+            printf("There is no `%s` in dictionary\n", tokenFlat);
         }
     }
+}
 
-    htable.dest();
-    free(content);
-    return 0;
+void processInput(size_t allLines, HashMasmFixed<char *> &htable, char *token, size_t i) {
+    while (token > (char *) 2) {
+        char *endLine = strchr(token, '\n');
+        if (endLine)
+            *endLine = 0;
+        token = flattenString(token);
+        char *sep = strchr(token, '=');
+        if (!sep)
+            break;
+        *sep = 0;
+        __m256i tokenKey = makePacked(token);
+        htable.set(tokenKey, sep + 1);
+        token = endLine + 1;
+        i++;
+    }
 }
 
